@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>ESP32 智能循迹车 | 实时温湿度控制台</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', 'Poppins', 'Roboto', monospace; }
+        body {
+            background: radial-gradient(circle at 20% 30%, #0a0f1e, #03060c);
+            color: #e0eaff;
+            padding: 20px;
+            transition: all 0.2s;
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1e2a3a; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #00a6ff; border-radius: 10px; }
+        .dashboard { max-width: 1600px; margin: 0 auto; }
+        .top-bar {
+            background: rgba(10, 20, 30, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 166, 255, 0.3);
+            border-radius: 28px;
+            padding: 12px 24px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            gap: 12px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+        }
+        .status-area { display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
+        .badge {
+            background: #0e1a24;
+            padding: 6px 14px;
+            border-radius: 40px;
+            font-weight: 500;
+            font-size: 0.85rem;
+        }
+        .online { color: #2effb0; text-shadow: 0 0 5px #2effb0; }
+        .offline { color: #ff5e6e; }
+        button {
+            background: linear-gradient(135deg, #1e2f3f, #0a121c);
+            border: 1px solid #2c6e9e;
+            color: #bbf0ff;
+            padding: 8px 18px;
+            border-radius: 40px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+        button:hover:not(:disabled) { background: #0066cc; color: white; box-shadow: 0 0 8px #00a6ff; border-color: #00a6ff; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .emergency-btn { background: #b91c1c; border-color: #ff5e6e; color: white; animation: pulse 1.2s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255, 80, 80, 0.5);} 70% { box-shadow: 0 0 0 10px rgba(255, 80, 80, 0);} 100% { box-shadow: 0 0 0 0 rgba(255, 80, 80, 0);} }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 22px; margin-bottom: 24px; }
+        .card {
+            background: rgba(12, 22, 35, 0.75);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(0, 166, 255, 0.25);
+            border-radius: 28px;
+            padding: 18px 20px;
+        }
+        .card h3 { margin-bottom: 16px; border-left: 4px solid #00a6ff; padding-left: 12px; display: flex; align-items: center; gap: 8px; }
+        .sensor-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; margin: 10px 0; border-bottom: 1px dashed #2e4a6e; padding-bottom: 8px; }
+        .switch {
+            width: 44px; height: 22px; background: #2a3a4a; border-radius: 30px;
+            position: relative; display: inline-block; cursor: pointer;
+        }
+        .switch.active { background: #00a6ff; }
+        .switch span { position: absolute; width: 18px; height: 18px; background: white; border-radius: 50%; top: 2px; left: 4px; transition: 0.2s; }
+        .switch.active span { left: 22px; }
+        .value { font-weight: bold; color: #c2e9ff; }
+        .motor-panel { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
+        .motor-item { background: #0f1a24; border-radius: 18px; padding: 8px; text-align: center; flex: 1; min-width: 100px; }
+        .distance-input { width: 70px; background: #1e2a36; border: 1px solid #2c6e9e; color: white; border-radius: 20px; padding: 4px 8px; text-align: center; }
+        input[type="range"] { width: 100%; margin: 8px 0; background: #2c3e4e; }
+        .chart-container { width: 100%; height: 280px; }
+        .flex-btns { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0; align-items: center; }
+        .voice-area { background: #07121c; border-radius: 24px; padding: 12px; }
+        footer { text-align: center; margin-top: 20px; font-size: 12px; opacity: 0.6; }
+        .wifi-connect-panel { background: #0a121e; border-radius: 40px; padding: 6px 12px; display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .toast-area { position: fixed; bottom: 20px; right: 20px; z-index: 1000; max-width: 300px; }
+        .toast { background: #1e2a3aee; backdrop-filter: blur(8px); border-left: 4px solid #ffaa00; padding: 10px 15px; margin-top: 8px; border-radius: 12px; color: #ffdd99; font-size: 13px; animation: fadeIn 0.3s; box-shadow: 0 4px 12px black; }
+        .toast.warning { border-left-color: #ff5500; color: #ffaa88; }
+        .toast.error { border-left-color: #ff3333; color: #ffaaaa; }
+        .toast.success { border-left-color: #2effb0; color: #ccffcc; }
+        .toast.info { border-left-color: #00a6ff; color: #bbf0ff; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateX(50px); } to { opacity: 1; transform: translateX(0); } }
+        @media (max-width: 680px) { body { padding: 12px; } .grid { grid-template-columns: 1fr; } }
+        .control-group { margin: 12px 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .ip-hint { font-size: 11px; color: #88aaff; margin-top: 5px; }
+    </style>
+</head>
+<body>
+<div class="dashboard">
+    <div class="top-bar">
+        <div class="status-area">
+            <div class="badge"><i class="fas fa-microchip"></i> 智能循迹车</div>
+            <div class="badge"><i class="fas fa-plug"></i> 状态: <span id="connStatus" class="offline">离线</span></div>
+            <div class="wifi-connect-panel">
+                <button id="connectBtn"><i class="fas fa-wifi"></i> 连接小车</button>
+            </div>
+            <button id="refreshBtn"><i class="fas fa-sync-alt"></i> 刷新数据</button>
+        </div>
+        <div class="badge"><i class="fas fa-charging-station"></i> 电压: 5.0V</div>
+        <button id="emergencyBtn" class="emergency-btn"><i class="fas fa-stop-circle"></i> 紧急停止</button>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h3><i class="fas fa-robot"></i> 实时状态</h3>
+            <div>运行模式: <span id="runMode" class="value">未连接</span></div>
+            <div>循迹状态: <span id="trackStatus" class="value">未启用</span></div>
+        </div>
+        <div class="card">
+            <h3><i class="fas fa-temperature-high"></i> DHT11 实时数据</h3>
+            <div>🌡️ 温度: <span id="tempVal" class="value">--</span> °C</div>
+            <div>💧 湿度: <span id="humiVal" class="value">--</span> %</div>
+            <div class="ip-hint">✅ 每2秒自动刷新</div>
+        </div>
+        <div class="card">
+            <h3><i class="fas fa-sun"></i> 光敏光照</h3>
+            <div id="lightVal" class="value">--</div>
+        </div>
+
+        <!-- 新增：火焰传感器模块 -->
+        <div class="card">
+            <h3><i class="fas fa-fire-alt"></i> 火焰检测</h3>
+            <div>🔥 火焰状态: <span id="flameStatus" class="value">--</span></div>
+            <div>📶 火焰强度: <span id="flameVal" class="value">--</span></div>
+        </div>
+
+        <!-- 新增：烟雾传感器模块 -->
+        <div class="card">
+            <h3><i class="fas fa-smog"></i> 烟雾检测</h3>
+            <div>💨 烟雾状态: <span id="smokeStatus" class="value">--</span></div>
+            <div>📶 烟雾浓度: <span id="smokeVal" class="value">--</span> ppm</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3><i class="fas fa-chart-line"></i> 温湿度实时曲线</h3>
+        <div id="sensorChart" class="chart-container"></div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h3><i class="fas fa-gamepad"></i> 运动控制</h3>
+            <div class="control-group">
+                <button id="forwardBtn"><i class="fas fa-arrow-up"></i> 前进</button>
+                <button id="backwardBtn"><i class="fas fa-arrow-down"></i> 后退</button>
+            </div>
+            <div class="control-group">
+                <button id="leftBtn"><i class="fas fa-arrow-left"></i> 左转</button>
+                <button id="rightBtn"><i class="fas fa-arrow-right"></i> 右转</button>
+            </div>
+            <button id="stopBtn" style="background:#aa3333; margin-top:8px;"><i class="fas fa-stop"></i> 立即停止</button>
+            <div class="motor-panel">
+                <div class="motor-item">电机A: <span id="motorA">待命</span></div>
+                <div class="motor-item">电机B: <span id="motorB">待命</span></div>
+                <div class="motor-item">电机C: <span id="motorC">待命</span></div>
+                <div class="motor-item">电机D: <span id="motorD">待命</span></div>
+            </div>
+        </div>
+        <div class="card">
+            <h3><i class="fas fa-road"></i> 自动循迹</h3>
+            <button id="autoStartBtn">启动循迹</button>
+            <button id="autoStopBtn">关闭循迹</button>
+            <div style="margin-top:10px;">状态: <span id="autoStatus">未启用</span></div>
+        </div>
+    </div>
+
+    <footer>✅ 已适配你的ESP32代码 | 实时温湿度 | 光敏光照 | 火焰 | 烟雾 | 电机/循迹控制</footer>
+    <div class="toast-area" id="toastArea"></div>
+</div>
+
+<script>
+    const CAR_IP = "192.168.4.1";
+    let connected = false;
+    let chartInstance = null;
+    let historyData = { temp: [], humi: [], time: [] };
+    let refreshTimer = null;
+
+    // 提示框
+    function showToast(msg, type = "info") {
+        const area = document.getElementById("toastArea");
+        const div = document.createElement("div");
+        div.className = `toast ${type}`;
+        div.innerHTML = `<i class="fas fa-bell"></i> ${msg}`;
+        area.appendChild(div);
+        setTimeout(() => div.remove(), 2500);
+    }
+
+    // 发送指令
+    async function sendCmd(path) {
+        if (!connected) { showToast("请先连接小车", "error"); return; }
+        try {
+            await fetch(`http://${CAR_IP}${path}`, { mode: "no-cors" });
+            showToast("指令发送成功", "success");
+        } catch (e) {
+            showToast("发送失败", "error");
+        }
+    }
+
+    // 读取实时数据
+    async function updateSensorData() {
+        if (!connected) return;
+        try {
+            // 温度
+            const temp = await fetch(`http://${CAR_IP}/temperature`).then(r => r.text());
+            document.getElementById("tempVal").innerText = temp;
+            
+            // 湿度
+            const humi = await fetch(`http://${CAR_IP}/humidity`).then(r => r.text());
+            document.getElementById("humiVal").innerText = humi;
+            
+            // 光照
+            const light = await fetch(`http://${CAR_IP}/light`).then(r => r.text());
+            document.getElementById("lightVal").innerText = light;
+
+            // 新增：火焰数据
+            const flame = await fetch(`http://${CAR_IP}/flame`).then(r => r.text());
+            const flameVal = await fetch(`http://${CAR_IP}/flame_val`).then(r => r.text());
+            document.getElementById("flameVal").innerText = flameVal;
+            document.getElementById("flameStatus").innerText = flame == 1 ? "检测到火焰" : "无火焰";
+
+            // 新增：烟雾数据
+            const smoke = await fetch(`http://${CAR_IP}/smoke`).then(r => r.text());
+            const smokeVal = await fetch(`http://${CAR_IP}/smoke_val`).then(r => r.text());
+            document.getElementById("smokeVal").innerText = smokeVal;
+            document.getElementById("smokeStatus").innerText = smoke == 1 ? "检测到烟雾" : "无烟雾";
+            
+            // 状态
+            const status = await fetch(`http://${CAR_IP}/status`).then(r => r.text());
+            document.getElementById("runMode").innerText = status;
+            document.getElementById("trackStatus").innerText = status === "微调循迹" ? "运行中" : "已停止";
+            document.getElementById("autoStatus").innerText = status === "微调循迹" ? "运行中" : "未启用";
+
+            // 图表
+            addChartData(temp, humi);
+        } catch (e) {
+            console.log(e);
+        }
+    }
+
+    // 图表
+    function initChart() {
+        chartInstance = echarts.init(document.getElementById("sensorChart"));
+        chartInstance.setOption({
+            tooltip: { trigger: "axis" },
+            legend: { data: ["温度", "湿度"], textStyle: { color: "#fff" } },
+            xAxis: { data: [], axisLine: { lineStyle: { color: "#666" } } },
+            yAxis: { axisLine: { lineStyle: { color: "#666" } } },
+            series: [
+                { name: "温度", type: "line", smooth: true, lineStyle: { width: 2, color: "#ff6666" } },
+                { name: "湿度", type: "line", smooth: true, lineStyle: { width: 2, color: "#00a6ff" } }
+            ]
+        });
+    }
+
+    function addChartData(temp, humi) {
+        const t = parseFloat(temp);
+        const h = parseFloat(humi);
+        if (isNaN(t) || isNaN(h)) return;
+
+        historyData.temp.push(t);
+        historyData.humi.push(h);
+        historyData.time.push(new Date().toLocaleTimeString());
+
+        if (historyData.temp.length > 30) {
+            historyData.temp.shift();
+            historyData.humi.shift();
+            historyData.time.shift();
+        }
+
+        chartInstance.setOption({
+            xAxis: { data: historyData.time },
+            series: [{ data: historyData.temp }, { data: historyData.humi }]
+        });
+    }
+
+    // 连接小车
+    async function connectCar() {
+        try {
+            await fetch(`http://${CAR_IP}/status`, { mode: "no-cors", timeout: 2000 });
+            connected = true;
+            document.getElementById("connStatus").innerText = "在线";
+            document.getElementById("connStatus").className = "online";
+            showToast("连接成功！实时数据已启动", "success");
+
+            if (refreshTimer) clearInterval(refreshTimer);
+            refreshTimer = setInterval(updateSensorData, 2000);
+            updateSensorData();
+        } catch (e) {
+            showToast("连接失败！请连接ESP32_Car热点", "error");
+        }
+    }
+
+    // 绑定按钮
+    window.onload = () => {
+        initChart();
+        document.getElementById("connectBtn").onclick = connectCar;
+        document.getElementById("refreshBtn").onclick = updateSensorData;
+        document.getElementById("emergencyBtn").onclick = () => sendCmd("/stop");
+        document.getElementById("stopBtn").onclick = () => sendCmd("/stop");
+        document.getElementById("forwardBtn").onclick = () => sendCmd("/forward");
+        document.getElementById("backwardBtn").onclick = () => sendCmd("/backward");
+        document.getElementById("leftBtn").onclick = () => sendCmd("/left");
+        document.getElementById("rightBtn").onclick = () => sendCmd("/right");
+        document.getElementById("autoStartBtn").onclick = () => sendCmd("/auto_start");
+        document.getElementById("autoStopBtn").onclick = () => sendCmd("/auto_stop");
+        showToast("连接ESP32_Car热点 → 点击连接小车", "info");
+    };
+</script>
+</body>
+</html>
